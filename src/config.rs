@@ -1,5 +1,5 @@
 use alloy::{
-    primitives::{Address, U128, U256},
+    primitives::{Address, U256},
     signers::local::PrivateKeySigner,
 };
 use eyre::{Result, WrapErr, eyre};
@@ -8,7 +8,7 @@ use std::{env::VarError, str::FromStr};
 #[derive(Debug)]
 pub struct BidParams {
     pub max_bid: U256,
-    pub amount: U128,
+    pub amount: u128,
     pub owner: Address,
 }
 
@@ -28,7 +28,7 @@ impl BidParams {
 
         let amount_str =
             dotenvy::var("BID_AMOUNT").wrap_err("missing BID_AMOUNT (bid amount, in wei)")?;
-        let amount = U128::from_str(&amount_str)
+        let amount = u128::from_str(&amount_str)
             .map_err(|_| eyre!("BID_AMOUNT is not a valid U128: {amount_str}"))?;
 
         Ok(Self {
