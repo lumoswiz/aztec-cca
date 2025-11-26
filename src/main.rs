@@ -1,14 +1,46 @@
-use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+mod config;
+
+use CCA::CCAInstance;
+use ValidationHook::ValidationHookInstance;
+use alloy::{
+    primitives::address,
+    providers::{Provider, ProviderBuilder, WsConnect},
+    sol,
+};
+use config::Config;
 use eyre::Result;
 use futures_util::StreamExt;
 
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug)]
+    CCA,
+    "abi/cca.json"
+);
+
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug)]
+    ValidationHook,
+    "abi/validation_hook.json"
+);
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenvy::dotenv()?;
+    let config = Config::from_env()?;
 
-    let rpc_url = dotenvy::var("ETH_RPC_URL")?;
-    let ws = WsConnect::new(rpc_url);
+    let ws = WsConnect::new(&config.rpc_url).with_max_retries(20);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
+
+    let _cca = CCAInstance::new(
+        address!("0x608c4e792C65f5527B3f70715deA44d3b302F4Ee"),
+        &provider,
+    );
+
+    let _validation_hook = ValidationHookInstance::new(
+        address!("0x2DD6e0E331DE9743635590F6c8BC5038374CAc9D"),
+        &provider,
+    );
 
     let sub = provider.subscribe_blocks().await?;
     let mut stream = sub.into_stream();
