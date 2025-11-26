@@ -10,10 +10,28 @@ use alloy::{
 use eyre::Result;
 
 #[derive(Debug, Clone)]
-pub struct TxConfig {
+pub struct FeeOverrides {
     pub max_fee_per_gas: u128,
     pub max_priority_fee_per_gas: u128,
-    pub access_list: Option<AccessList>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AccessListConfig {
+    None,
+    Provided(AccessList),
+    Generate,
+}
+
+impl Default for AccessListConfig {
+    fn default() -> Self {
+        AccessListConfig::None
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TxConfig {
+    pub fees: Option<FeeOverrides>,
+    pub access_list: AccessListConfig,
 }
 
 pub struct TxBuilder<P>
@@ -50,7 +68,8 @@ where
     ) -> Result<TransactionRequest> {
         let calldata = self.bid_calldata(bid);
         let value = U256::from(bid.amount);
-        Ok(self.build_request(calldata, value))
+        let tx = self.build_base_request(calldata, value);
+        self.apply_config(tx).await
     }
 
     fn bid_calldata(&self, bid: &SubmitBidParams) -> Bytes {
@@ -66,22 +85,36 @@ where
         )
     }
 
-    fn build_request(&self, calldata: Bytes, value: U256) -> TransactionRequest {
-        let tx = TransactionRequest::default()
+    fn build_base_request(&self, calldata: Bytes, value: U256) -> TransactionRequest {
+        TransactionRequest::default()
             .with_to(self.cca)
             .with_value(value)
-            .with_input(calldata);
+            .with_input(calldata)
+    }
 
-        if let Some(cfg) = &self.config {
-            let tx = tx
-                .with_max_fee_per_gas(cfg.max_fee_per_gas)
-                .with_max_priority_fee_per_gas(cfg.max_priority_fee_per_gas);
-            if let Some(access_list) = &cfg.access_list {
-                return tx.with_access_list(access_list.clone());
-            }
-            return tx;
-        }
+    async fn apply_config(&self, tx: TransactionRequest) -> Result<TransactionRequest> {
+        let Some(cfg) = &self.config else {
+            return Ok(tx);
+        };
 
-        tx
+        let tx = if let Some(fees) = &cfg.fees {
+            tx.with_max_fee_per_gas(fees.max_fee_per_gas)
+                .with_max_priority_fee_per_gas(fees.max_priority_fee_per_gas)
+        } else {
+            tx
+        };
+
+        let tx = match &cfg.access_list {
+            AccessListConfig::None => tx,
+            AccessListConfig::Provided(list) => tx.with_access_list(list.clone()),
+            AccessListConfig::Generate => self.generate_access_list(tx).await?,
+        };
+
+        Ok(tx)
+    }
+
+    async fn generate_access_list(&self, tx: TransactionRequest) -> Result<TransactionRequest> {
+        let res = self.provider.create_access_list(&tx).await?;
+        Ok(tx.with_access_list(res.access_list))
     }
 }
