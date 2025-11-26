@@ -1,13 +1,15 @@
+mod config;
+
 use CCA::CCAInstance;
 use ValidationHook::ValidationHookInstance;
 use alloy::{
-    primitives::{U256, address},
+    primitives::address,
     providers::{Provider, ProviderBuilder, WsConnect},
     sol,
 };
+use config::Config;
 use eyre::Result;
 use futures_util::StreamExt;
-use std::str::FromStr;
 
 sol!(
     #[sol(rpc)]
@@ -25,13 +27,10 @@ sol!(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenvy::dotenv()?;
+    let config = Config::from_env()?;
 
-    let rpc_url = dotenvy::var("ETH_RPC_URL")?;
-    let ws = WsConnect::new(rpc_url);
+    let ws = WsConnect::new(&config.rpc_url).with_max_retries(20);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
-
-    let _bid = U256::from_str(&dotenvy::var("MAX_BID_PRICE")?)?;
 
     let _cca = CCAInstance::new(
         address!("0x608c4e792C65f5527B3f70715deA44d3b302F4Ee"),
