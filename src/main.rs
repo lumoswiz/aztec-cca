@@ -33,10 +33,16 @@ async fn main() -> Result<()> {
 
     let cca_addr = address!("0x608c4e792C65f5527B3f70715deA44d3b302F4Ee");
     let hook_addr = address!("0x2DD6e0E331DE9743635590F6c8BC5038374CAc9D");
+    let owner = config
+        .bid_params
+        .owner
+        .unwrap_or(address!("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"));
+
     let auction = Auction::new(provider.clone(), cca_addr, hook_addr);
     let params = auction.load_params().await?;
-    let bid_price = config.bid_params.max_bid;
-    params.ensure_tick_aligned(bid_price)?;
+    let submit_params = auction
+        .prepare_submit_bid(&config.bid_params, &params, owner)
+        .await?;
 
     let sub = provider.subscribe_blocks().await?;
     let mut stream = sub.into_stream();

@@ -1,5 +1,5 @@
-use crate::{CCA::CCAInstance, ValidationHook::ValidationHookInstance};
-use alloy::primitives::{Address, U256};
+use crate::{CCA::CCAInstance, ValidationHook::ValidationHookInstance, config::BidParams};
+use alloy::primitives::{Address, U128, U256};
 use alloy::providers::Provider;
 use eyre::{Result, eyre};
 
@@ -75,6 +75,22 @@ where
 
         Ok(prev)
     }
+
+    pub async fn prepare_submit_bid(
+        &self,
+        cfg: &BidParams,
+        params: &AuctionParams,
+        resolved_owner: Address,
+    ) -> Result<SubmitBidParams> {
+        params.ensure_tick_aligned(cfg.max_bid)?;
+        let prev_tick_price = self.compute_prev_tick_price(params, cfg.max_bid).await?;
+        Ok(SubmitBidParams {
+            max_price: cfg.max_bid,
+            amount: cfg.amount,
+            owner: resolved_owner,
+            prev_tick_price,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -97,4 +113,12 @@ impl AuctionParams {
 
         Ok(())
     }
+}
+
+#[derive(Debug)]
+pub struct SubmitBidParams {
+    pub max_price: U256,
+    pub amount: U128,
+    pub owner: Address,
+    pub prev_tick_price: U256,
 }
