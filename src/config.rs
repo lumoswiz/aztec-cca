@@ -6,7 +6,7 @@ use alloy::{
 use eyre::{Result, WrapErr, eyre};
 use std::{env::VarError, str::FromStr};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BidParams {
     pub max_bid: U256,
     pub amount: u128,
