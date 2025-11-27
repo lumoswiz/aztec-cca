@@ -3,7 +3,7 @@ use alloy::{
     rpc::client::BuiltInConnectionString,
     signers::local::PrivateKeySigner,
 };
-use eyre::{Result, WrapErr, eyre};
+use eyre::{eyre, Result, WrapErr};
 use std::{env::VarError, str::FromStr};
 
 #[derive(Debug)]
@@ -22,13 +22,15 @@ pub struct Config {
 
 impl BidParams {
     pub fn from_env_with_owner(owner: Address) -> Result<Self> {
-        let max_bid_str = dotenvy::var("MAX_BID_PRICE").wrap_err("missing MAX_BID_PRICE (wei)")?;
-        let max_bid: alloy::primitives::Uint<256, 4> = U256::from_str(&max_bid_str)
-            .map_err(|_| eyre!("MAX_BID_PRICE is not a valid U256: {max_bid_str}"))?;
+        let max_bid: alloy::primitives::Uint<256, 4> =
+            parse_env("MAX_BID_PRICE", "max bid price (wei)", |value| {
+                U256::from_str(value)
+                    .map_err(|_| eyre!("MAX_BID_PRICE is not a valid U256: {value}"))
+            })?;
 
-        let amount_str = dotenvy::var("BID_AMOUNT").wrap_err("missing BID_AMOUNT (wei)")?;
-        let amount = u128::from_str(&amount_str)
-            .map_err(|_| eyre!("BID_AMOUNT is not a valid u128: {amount_str}"))?;
+        let amount = parse_env("BID_AMOUNT", "bid amount (wei)", |value| {
+            u128::from_str(value).map_err(|_| eyre!("BID_AMOUNT is not a valid u128: {value}"))
+        })?;
 
         Ok(Self {
             max_bid,
@@ -44,15 +46,17 @@ impl Config {
 
         let transport = provider_transport_from_env()?;
 
-        let pk = dotenvy::var("PRIVATE_KEY").wrap_err("missing PRIVATE_KEY")?;
-        let signer = PrivateKeySigner::from_str(&pk)
-            .map_err(|_| eyre!("PRIVATE_KEY is not a valid private key"))?;
+        let signer = parse_env("PRIVATE_KEY", "hex private key", |value| {
+            PrivateKeySigner::from_str(value)
+                .map_err(|_| eyre!("PRIVATE_KEY is not a valid private key"))
+        })?;
 
-        let owner = match dotenvy::var("OWNER") {
-            Ok(s) => Address::parse_checksummed(&s, None)
-                .map_err(|_| eyre!("OWNER is not a valid checksummed address: {s}"))?,
-            Err(dotenvy::Error::EnvVar(VarError::NotPresent)) => signer.address(),
-            Err(e) => return Err(e).wrap_err("failed to read OWNER"),
+        let owner = match optional_env("OWNER", |value| {
+            Address::parse_checksummed(value, None)
+                .map_err(|_| eyre!("OWNER is not a valid checksummed address: {value}"))
+        })? {
+            Some(address) => address,
+            None => signer.address(),
         };
 
         let bid_params = BidParams::from_env_with_owner(owner)?;
@@ -66,16 +70,38 @@ impl Config {
 }
 
 fn provider_transport_from_env() -> Result<BuiltInConnectionString> {
-    let raw =
-        dotenvy::var("RPC_ENDPOINT").wrap_err("missing RPC_ENDPOINT (HTTP/WS URL or IPC path)")?;
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err(eyre!(
-            "RPC_ENDPOINT cannot be empty: provide an HTTP/WS  URL or IPC path"
-        ));
+    parse_env("RPC_ENDPOINT", "HTTP/WS URL or IPC path", |value| {
+        value.parse::<BuiltInConnectionString>().map_err(|err| eyre!(err))
+    })
+}
+
+fn parse_env<T, F>(key: &str, desc: &str, parser: F) -> Result<T>
+where
+    F: FnOnce(&str) -> Result<T>,
+{
+    let raw = dotenvy::var(key).wrap_err(format!("missing {key} ({desc})"))?;
+    let value = raw.trim();
+    if value.is_empty() {
+        return Err(eyre!("{key} cannot be empty ({desc})"));
     }
 
-    trimmed
-        .parse::<BuiltInConnectionString>()
-        .map_err(|err| eyre!("invalid RPC_ENDPOINT: {err}"))
+    parser(value)
+}
+
+fn optional_env<T, F>(key: &str, parser: F) -> Result<Option<T>>
+where
+    F: FnOnce(&str) -> Result<T>,
+{
+    match dotenvy::var(key) {
+        Ok(raw) => {
+            let value = raw.trim();
+            if value.is_empty() {
+                Ok(None)
+            } else {
+                parser(value).map(Some)
+            }
+        }
+        Err(dotenvy::Error::EnvVar(VarError::NotPresent)) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
 }
