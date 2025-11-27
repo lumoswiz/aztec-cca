@@ -1,14 +1,17 @@
 mod auction;
+mod blocks;
 mod config;
 mod transaction;
 
 use crate::{
     auction::Auction,
+    blocks::{BlockConsumer, BlockProducer},
     config::Config,
-    transaction::{TxBuilder, TxConfig},
+    transaction::TxBuilder,
 };
 use alloy::{primitives::address, providers::ProviderBuilder, sol};
 use eyre::Result;
+use futures_util::StreamExt;
 
 sol!(
     #[sol(rpc)]
@@ -40,18 +43,22 @@ async fn main() -> Result<()> {
     let submit_bid_params = auction
         .prepare_submit_bid(&config.bid_params, &params, config.bid_params.owner)
         .await?;
-    let tx_config = TxConfig::new().generate_access_list();
-    let tx_request = TxBuilder::new(provider.clone(), config.signer, cca_addr, Some(tx_config))
+    let _tx_request = TxBuilder::new(provider.clone(), config.signer, cca_addr, None)
         .build_submit_bid_request(&submit_bid_params)
         .await?;
-    println!("Prepared transaction request: {tx_request:#?}");
 
-    //let sub = provider.subscribe_blocks().await?;
-    //let mut stream = sub.into_stream();
-    //
-    //while let Some(header) = stream.next().await {
-    //println!("Latest block number: {}", header.number);
-    //}
+    let mut block_producer = BlockProducer::new(provider.clone(), &config.transport).await?;
+    let block_consumer = BlockConsumer::new();
+
+    while let Some(result) = block_producer.next().await {
+        match result {
+            Ok(header) => block_consumer.handle_block(&header).await?,
+            Err(err) => {
+                eprintln!("block stream terminated: {err:?}");
+                break;
+            }
+        }
+    }
 
     Ok(())
 }
