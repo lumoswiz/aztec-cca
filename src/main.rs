@@ -2,14 +2,9 @@ mod auction;
 mod config;
 mod transaction;
 
-use crate::{auction::Auction, config::Config};
-use alloy::{
-    primitives::address,
-    providers::{Provider, ProviderBuilder, WsConnect},
-    sol,
-};
+use crate::{auction::Auction, config::Config, transaction::TxBuilder};
+use alloy::{primitives::address, providers::ProviderBuilder, sol};
 use eyre::Result;
-use futures_util::StreamExt;
 
 sol!(
     #[sol(rpc)]
@@ -29,10 +24,8 @@ sol!(
 async fn main() -> Result<()> {
     let config = Config::from_env()?;
 
-    let ws = WsConnect::new(&config.rpc_url).with_max_retries(20);
     let provider = ProviderBuilder::new()
-        .wallet(config.signer.clone())
-        .connect_ws(ws)
+        .connect_with(&config.transport)
         .await?;
 
     let cca_addr = address!("0x608c4e792C65f5527B3f70715deA44d3b302F4Ee");
@@ -40,16 +33,19 @@ async fn main() -> Result<()> {
 
     let auction = Auction::new(provider.clone(), cca_addr, hook_addr);
     let params = auction.load_params().await?;
-    let submit_params = auction
+    let submit_bid_params = auction
         .prepare_submit_bid(&config.bid_params, &params, config.bid_params.owner)
         .await?;
+    let _submit_tx = TxBuilder::new(provider.clone(), config.signer, cca_addr, None)
+        .build_submit_bid_request(&submit_bid_params)
+        .await?;
 
-    let sub = provider.subscribe_blocks().await?;
-    let mut stream = sub.into_stream();
-
-    while let Some(header) = stream.next().await {
-        println!("Latest block number: {}", header.number);
-    }
+    //let sub = provider.subscribe_blocks().await?;
+    //let mut stream = sub.into_stream();
+    //
+    //while let Some(header) = stream.next().await {
+    //println!("Latest block number: {}", header.number);
+    //}
 
     Ok(())
 }
