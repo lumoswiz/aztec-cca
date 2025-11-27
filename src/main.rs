@@ -1,5 +1,6 @@
 mod auction;
 mod config;
+mod transaction;
 
 use crate::{auction::Auction, config::Config};
 use alloy::{
