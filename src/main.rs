@@ -2,7 +2,11 @@ mod auction;
 mod config;
 mod transaction;
 
-use crate::{auction::Auction, config::Config, transaction::TxBuilder};
+use crate::{
+    auction::Auction,
+    config::Config,
+    transaction::{TxBuilder, TxConfig},
+};
 use alloy::{primitives::address, providers::ProviderBuilder, sol};
 use eyre::Result;
 
@@ -36,9 +40,11 @@ async fn main() -> Result<()> {
     let submit_bid_params = auction
         .prepare_submit_bid(&config.bid_params, &params, config.bid_params.owner)
         .await?;
-    let _submit_tx = TxBuilder::new(provider.clone(), config.signer, cca_addr, None)
+    let tx_config = TxConfig::new().generate_access_list();
+    let tx_request = TxBuilder::new(provider.clone(), config.signer, cca_addr, Some(tx_config))
         .build_submit_bid_request(&submit_bid_params)
         .await?;
+    println!("Prepared transaction request: {tx_request:#?}");
 
     //let sub = provider.subscribe_blocks().await?;
     //let mut stream = sub.into_stream();
