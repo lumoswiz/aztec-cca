@@ -3,7 +3,7 @@ use alloy::{
     rpc::client::BuiltInConnectionString,
     signers::local::PrivateKeySigner,
 };
-use eyre::{eyre, Result, WrapErr};
+use eyre::{Result, WrapErr, eyre};
 use std::{env::VarError, str::FromStr};
 
 #[derive(Debug)]
@@ -22,11 +22,9 @@ pub struct Config {
 
 impl BidParams {
     pub fn from_env_with_owner(owner: Address) -> Result<Self> {
-        let max_bid: alloy::primitives::Uint<256, 4> =
-            parse_env("MAX_BID_PRICE", "max bid price (wei)", |value| {
-                U256::from_str(value)
-                    .map_err(|_| eyre!("MAX_BID_PRICE is not a valid U256: {value}"))
-            })?;
+        let max_bid = parse_env("MAX_BID_PRICE", "max bid price (wei)", |value| {
+            U256::from_str(value).map_err(|_| eyre!("MAX_BID_PRICE is not a valid U256: {value}"))
+        })?;
 
         let amount = parse_env("BID_AMOUNT", "bid amount (wei)", |value| {
             u128::from_str(value).map_err(|_| eyre!("BID_AMOUNT is not a valid u128: {value}"))
@@ -71,7 +69,9 @@ impl Config {
 
 fn provider_transport_from_env() -> Result<BuiltInConnectionString> {
     parse_env("RPC_ENDPOINT", "HTTP/WS URL or IPC path", |value| {
-        value.parse::<BuiltInConnectionString>().map_err(|err| eyre!(err))
+        value
+            .parse::<BuiltInConnectionString>()
+            .map_err(|err| eyre!(err))
     })
 }
 
