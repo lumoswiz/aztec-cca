@@ -15,17 +15,12 @@ pub struct FeeOverrides {
     pub max_priority_fee_per_gas: u128,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum AccessListConfig {
+    #[default]
     None,
     Provided(AccessList),
     Generate,
-}
-
-impl Default for AccessListConfig {
-    fn default() -> Self {
-        AccessListConfig::None
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +82,7 @@ where
 
     fn build_base_request(&self, calldata: Bytes, value: U256) -> TransactionRequest {
         TransactionRequest::default()
+            .with_from(self.signer.address())
             .with_to(self.cca)
             .with_value(value)
             .with_input(calldata)
