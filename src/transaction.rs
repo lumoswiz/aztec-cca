@@ -23,10 +23,42 @@ pub enum AccessListConfig {
     Generate,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TxConfig {
     pub fees: Option<FeeOverrides>,
     pub access_list: AccessListConfig,
+}
+
+impl TxConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_fee_overrides(
+        mut self,
+        max_fee_per_gas: u128,
+        max_priority_fee_per_gas: u128,
+    ) -> Self {
+        self.fees = Some(FeeOverrides {
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+        });
+        self
+    }
+
+    pub fn with_access_list(mut self, config: AccessListConfig) -> Self {
+        self.access_list = config;
+        self
+    }
+
+    pub fn generate_access_list(self) -> Self {
+        self.with_access_list(AccessListConfig::Generate)
+    }
+
+    pub fn provided_access_list(mut self, list: AccessList) -> Self {
+        self.access_list = AccessListConfig::Provided(list);
+        self
+    }
 }
 
 pub struct TxBuilder<P>
@@ -84,8 +116,8 @@ where
         TransactionRequest::default()
             .with_from(self.signer.address())
             .with_to(self.cca)
-            .with_value(value)
             .with_input(calldata)
+            .with_value(value)
     }
 
     async fn apply_config(&self, tx: TransactionRequest) -> Result<TransactionRequest> {
