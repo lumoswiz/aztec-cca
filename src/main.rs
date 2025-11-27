@@ -5,9 +5,8 @@ mod transaction;
 
 use crate::{
     auction::Auction,
-    blocks::{BlockConsumer, BlockProducer},
+    blocks::{BidContext, BlockConsumer, BlockProducer},
     config::Config,
-    transaction::TxBuilder,
 };
 use alloy::{primitives::address, providers::ProviderBuilder, sol};
 use eyre::Result;
@@ -40,15 +39,19 @@ async fn main() -> Result<()> {
 
     let auction = Auction::new(provider.clone(), cca_addr, hook_addr);
     let params = auction.load_params().await?;
-    let submit_bid_params = auction
-        .prepare_submit_bid(&config.bid_params, &params, config.bid_params.owner)
-        .await?;
-    let _tx_request = TxBuilder::new(provider.clone(), config.signer, cca_addr, None)
-        .build_submit_bid_request(&submit_bid_params)
-        .await?;
+    params.ensure_tick_aligned(config.bid_params.max_bid)?;
+
+    let bid_context = BidContext::new(
+        auction,
+        params,
+        config.bid_params.clone(),
+        config.signer.clone(),
+        None,
+        cca_addr,
+    );
 
     let mut block_producer = BlockProducer::new(provider.clone(), &config.transport).await?;
-    let block_consumer = BlockConsumer::new();
+    let mut block_consumer = BlockConsumer::new(bid_context);
 
     while let Some(result) = block_producer.next().await {
         match result {

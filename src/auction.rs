@@ -1,10 +1,6 @@
-use crate::{
-    CCA::{self, CCAInstance},
-    ValidationHook::ValidationHookInstance,
-    config::BidParams,
-};
-use alloy::primitives::{Address, Bytes, U256};
-use alloy::{providers::Provider, sol_types::SolCall};
+use crate::{CCA::CCAInstance, ValidationHook::ValidationHookInstance, config::BidParams};
+use alloy::primitives::{Address, U256};
+use alloy::providers::Provider;
 use eyre::{Result, eyre};
 
 #[derive(Debug)]
@@ -94,20 +90,9 @@ where
             prev_tick_price,
         })
     }
-
-    pub fn build_submit_bid_calldata(&self, submit: &SubmitBidParams) -> Vec<u8> {
-        CCA::submitBid_1Call {
-            maxPrice: submit.max_price,
-            amount: submit.amount,
-            owner: submit.owner,
-            prevTickPrice: submit.prev_tick_price,
-            hookData: Bytes::new(),
-        }
-        .abi_encode()
-    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AuctionParams {
     pub contributor_period_end_block: U256,
     pub max_purchase_limit: U256,
