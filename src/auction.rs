@@ -86,7 +86,6 @@ where
         params: &AuctionParams,
         resolved_owner: Address,
     ) -> Result<SubmitBidParams> {
-        params.ensure_tick_aligned(cfg.max_bid)?;
         let prev_tick_price = self.compute_prev_tick_price(params, cfg.max_bid).await?;
         Ok(SubmitBidParams {
             max_price: cfg.max_bid,
