@@ -3,10 +3,7 @@ use crate::{
     ValidationHook::ValidationHookInstance,
     config::BidParams,
 };
-use alloy::{
-    primitives::{Address, Bytes, U256},
-    rpc::types::TransactionRequest,
-};
+use alloy::primitives::{Address, Bytes, U256};
 use alloy::{providers::Provider, sol_types::SolCall};
 use eyre::{Result, eyre};
 
