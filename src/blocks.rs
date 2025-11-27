@@ -122,6 +122,11 @@ where
         builder.build_submit_bid_request(submit).await
     }
 
+    pub async fn simulate_transaction(&self, tx: &TransactionRequest) -> Result<()> {
+        self.auction.provider.call(tx.clone()).await?;
+        Ok(())
+    }
+
     pub async fn send_transaction(&self, tx: TransactionRequest) -> Result<()> {
         let pending = self.auction.provider.send_transaction(tx).await?;
         let receipt = pending.get_receipt().await?;
@@ -189,6 +194,7 @@ where
 
         let submit_bid_params = bid_context.prepare_submit_bid().await?;
         let tx_request = bid_context.build_transaction(&submit_bid_params).await?;
+        bid_context.simulate_transaction(&tx_request).await?;
         bid_context.send_transaction(tx_request).await?;
         self.state = BidState::Submitted;
 
