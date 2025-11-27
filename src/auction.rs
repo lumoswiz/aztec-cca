@@ -35,16 +35,23 @@ where
             .add(self.validation_hook.CONTRIBUTOR_PERIOD_END_BLOCK())
             .add(self.validation_hook.MAX_PURCHASE_LIMIT())
             .add(self.cca.floorPrice())
-            .add(self.cca.tickSpacing());
+            .add(self.cca.tickSpacing())
+            .add(self.cca.MAX_BID_PRICE());
 
-        let (contributor_period_end_block, max_purchase_limit, floor_price, tick_spacing) =
-            multicall.aggregate().await?;
+        let (
+            contributor_period_end_block,
+            max_purchase_limit,
+            floor_price,
+            tick_spacing,
+            max_bid_price,
+        ) = multicall.aggregate().await?;
 
         Ok(AuctionParams {
             contributor_period_end_block,
             max_purchase_limit,
             floor_price,
             tick_spacing,
+            max_bid_price,
         })
     }
 
@@ -98,6 +105,7 @@ pub struct AuctionParams {
     pub max_purchase_limit: U256,
     pub floor_price: U256,
     pub tick_spacing: U256,
+    pub max_bid_price: U256,
 }
 
 impl AuctionParams {

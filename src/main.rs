@@ -1,12 +1,14 @@
 mod auction;
 mod blocks;
 mod config;
+mod validate;
 mod transaction;
 
 use crate::{
     auction::Auction,
     blocks::{BidContext, BlockConsumer, BlockProducer},
     config::Config,
+    validate::PreflightValidator,
 };
 use alloy::{primitives::address, providers::ProviderBuilder, sol};
 use eyre::Result;
@@ -26,6 +28,13 @@ sol!(
     "abi/validation_hook.json"
 );
 
+sol!(
+    #[sol(rpc)]
+    #[derive(Debug)]
+    Soulbound,
+    "abi/soulbound.json"
+);
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = Config::from_env()?;
@@ -39,7 +48,7 @@ async fn main() -> Result<()> {
 
     let auction = Auction::new(provider.clone(), cca_addr, hook_addr);
     let params = auction.load_params().await?;
-    params.ensure_tick_aligned(config.bid_params.max_bid)?;
+    PreflightValidator::new(&params, &config.bid_params).run()?;
 
     let bid_context = BidContext::new(
         auction,
