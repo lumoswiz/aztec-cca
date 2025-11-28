@@ -13,7 +13,7 @@ Add your bids to `bids.toml`:
 
 ```toml
 [[bids]]
-max_bid = "19807042548578993971286201723"
+max_bid = "19807042548578993971286201723" # market order 
 amount = "2000000000000000000"            
 owner = "0x1234567890aBCdEf1234567890abCDef12345678"  # optional
 
@@ -24,7 +24,6 @@ amount = "500000000000000000"
 ```
 
 - `max_bid` format is Q96.
-- Use `max_bid = "19807042548578993971286201723"` for a market order.
 
 ## Running the Bot
 ```bash
