@@ -1,4 +1,7 @@
-use crate::{CCA::CCAInstance, ValidationHook::ValidationHookInstance, config::BidParams};
+use crate::{
+    CCA::CCAInstance, Soulbound::SoulboundInstance, ValidationHook::ValidationHookInstance,
+    config::BidParams,
+};
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
 use eyre::{Result, eyre};
@@ -11,24 +14,32 @@ where
     pub provider: P,
     pub cca: CCAInstance<P>,
     pub validation_hook: ValidationHookInstance<P>,
+    pub soulbound: SoulboundInstance<P>,
 }
 
 impl<P> Auction<P>
 where
     P: Provider + Clone,
 {
-    pub fn new(provider: P, cca_addr: Address, hook_addr: Address) -> Self {
+    pub fn new(
+        provider: P,
+        cca_addr: Address,
+        hook_addr: Address,
+        soulbound_addr: Address,
+    ) -> Self {
         let cca = CCAInstance::new(cca_addr, provider.clone());
         let validation_hook = ValidationHookInstance::new(hook_addr, provider.clone());
+        let soulbound = SoulboundInstance::new(soulbound_addr, provider.clone());
 
         Self {
             provider,
             cca,
             validation_hook,
+            soulbound,
         }
     }
 
-    pub async fn load_params(&self) -> Result<AuctionParams> {
+    pub async fn load_params(&self, signer_address: Address) -> Result<AuctionParams> {
         let multicall = self
             .provider
             .multicall()
@@ -36,7 +47,10 @@ where
             .add(self.validation_hook.MAX_PURCHASE_LIMIT())
             .add(self.cca.floorPrice())
             .add(self.cca.tickSpacing())
-            .add(self.cca.MAX_BID_PRICE());
+            .add(self.cca.MAX_BID_PRICE())
+            .add(self.cca.endBlock())
+            .add(self.validation_hook.totalPurchased(signer_address))
+            .add(self.soulbound.hasAnyToken(signer_address));
 
         let (
             contributor_period_end_block,
@@ -44,7 +58,12 @@ where
             floor_price,
             tick_spacing,
             max_bid_price,
+            end_block_raw,
+            total_purchased,
+            has_any_token,
         ) = multicall.aggregate().await?;
+
+        let end_block = U256::from(end_block_raw);
 
         Ok(AuctionParams {
             contributor_period_end_block,
@@ -52,6 +71,9 @@ where
             floor_price,
             tick_spacing,
             max_bid_price,
+            end_block,
+            total_purchased,
+            has_any_token,
         })
     }
 
@@ -106,6 +128,9 @@ pub struct AuctionParams {
     pub floor_price: U256,
     pub tick_spacing: U256,
     pub max_bid_price: U256,
+    pub end_block: U256,
+    pub total_purchased: U256,
+    pub has_any_token: bool,
 }
 
 impl AuctionParams {
