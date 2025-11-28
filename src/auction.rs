@@ -6,7 +6,7 @@ use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
 use eyre::{Result, eyre};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Auction<P>
 where
     P: Provider + Clone,

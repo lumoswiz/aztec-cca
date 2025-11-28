@@ -13,10 +13,10 @@ impl<'a> PreflightValidator<'a> {
     }
 
     pub fn run(&self) -> Result<()> {
-        self.ensure_has_soulbound_token()?;
         self.ensure_amount_positive()?;
         self.ensure_max_price_within_bounds()?;
         self.ensure_within_purchase_limit()?;
+        // self.ensure_has_soulbound_token()?;
         self.params.ensure_tick_aligned(self.bid.max_bid)?;
         Ok(())
     }

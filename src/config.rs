@@ -4,38 +4,23 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use eyre::{Result, WrapErr, eyre};
-use std::{env::VarError, str::FromStr};
+use serde::Deserialize;
+use std::{env::VarError, fs, path::Path, str::FromStr};
+
+const DEFAULT_BIDS_FILE: &str = "bids.toml";
+
+#[derive(Debug)]
+pub struct Config {
+    pub transport: BuiltInConnectionString,
+    pub signer: PrivateKeySigner,
+    pub bids: Vec<BidParams>,
+}
 
 #[derive(Debug, Clone)]
 pub struct BidParams {
     pub max_bid: U256,
     pub amount: u128,
     pub owner: Address,
-}
-
-#[derive(Debug)]
-pub struct Config {
-    pub transport: BuiltInConnectionString,
-    pub signer: PrivateKeySigner,
-    pub bid_params: BidParams,
-}
-
-impl BidParams {
-    pub fn from_env_with_owner(owner: Address) -> Result<Self> {
-        let max_bid = parse_env("MAX_BID_PRICE", "max bid price (wei)", |value| {
-            U256::from_str(value).map_err(|_| eyre!("MAX_BID_PRICE is not a valid U256: {value}"))
-        })?;
-
-        let amount = parse_env("BID_AMOUNT", "bid amount (wei)", |value| {
-            u128::from_str(value).map_err(|_| eyre!("BID_AMOUNT is not a valid u128: {value}"))
-        })?;
-
-        Ok(Self {
-            max_bid,
-            amount,
-            owner,
-        })
-    }
 }
 
 impl Config {
@@ -57,12 +42,64 @@ impl Config {
             None => signer.address(),
         };
 
-        let bid_params = BidParams::from_env_with_owner(owner)?;
+        let bids = load_bids(owner)?;
 
         Ok(Self {
             transport,
-            bid_params,
+            bids,
             signer,
+        })
+    }
+}
+
+fn load_bids(default_owner: Address) -> Result<Vec<BidParams>> {
+    let path = Path::new(DEFAULT_BIDS_FILE);
+    let contents = fs::read_to_string(path)
+        .wrap_err(format!("failed to read bids config at {}", path.display()))?;
+    let file: BidFile =
+        toml::from_str(&contents).wrap_err("failed to parse bids config (expected TOML format)")?;
+    if file.bids.is_empty() {
+        return Err(eyre!(
+            "bids config must include at least one [[bids]] entry"
+        ));
+    }
+
+    file.bids
+        .into_iter()
+        .map(|bid| bid.into_params(default_owner))
+        .collect()
+}
+
+#[derive(Debug, Deserialize)]
+struct BidFile {
+    bids: Vec<BidSpec>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BidSpec {
+    max_bid: String,
+    amount: String,
+    owner: Option<String>,
+}
+
+impl BidSpec {
+    fn into_params(self, default_owner: Address) -> Result<BidParams> {
+        let max_bid = U256::from_str(self.max_bid.trim())
+            .map_err(|_| eyre!("bid entry max_bid is not a valid U256: {}", self.max_bid))?;
+
+        let amount = u128::from_str(self.amount.trim())
+            .map_err(|_| eyre!("bid entry amount is not a valid u128: {}", self.amount))?;
+
+        let owner = match self.owner {
+            Some(raw) => Address::parse_checksummed(raw.trim(), None)
+                .map_err(|_| eyre!("bid entry owner is not a valid checksummed address: {raw}"))?,
+            None => default_owner,
+        };
+
+        Ok(BidParams {
+            max_bid,
+            amount,
+            owner,
         })
     }
 }
