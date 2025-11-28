@@ -1,6 +1,7 @@
 use crate::{
     auction::{Auction, AuctionParams, SubmitBidParams},
     config::BidParams,
+    registry::{BidRegistry, BidState, TrackedBid},
     transaction::{TxBuilder, TxConfig},
 };
 use std::{
@@ -11,7 +12,7 @@ use std::{
 
 use alloy::{
     network::BlockResponse,
-    primitives::{Address, U256},
+    primitives::{Address, B256, U256},
     providers::Provider,
     rpc::{
         client::BuiltInConnectionString,
@@ -68,6 +69,7 @@ impl Stream for BlockProducer {
     }
 }
 
+#[derive(Debug)]
 pub struct BidContext<P>
 where
     P: Provider + Clone,
@@ -84,10 +86,6 @@ impl<P> BidContext<P>
 where
     P: Provider + Clone,
 {
-    pub fn params(&self) -> &AuctionParams {
-        &self.params
-    }
-
     pub fn new(
         auction: Auction<P>,
         params: AuctionParams,
@@ -127,14 +125,14 @@ where
         Ok(())
     }
 
-    pub async fn send_transaction(&self, tx: TransactionRequest) -> Result<()> {
+    pub async fn send_transaction(&self, tx: TransactionRequest) -> Result<B256> {
         let pending = self.auction.provider.send_transaction(tx).await?;
         let receipt = pending.get_receipt().await?;
         println!(
             "Bid submitted in transaction: {:?}",
             receipt.transaction_hash
         );
-        Ok(())
+        Ok(receipt.transaction_hash)
     }
 }
 
@@ -142,83 +140,74 @@ pub struct BlockConsumer<P>
 where
     P: Provider + Clone,
 {
-    state: BidState<P>,
-}
-
-enum BidState<P>
-where
-    P: Provider + Clone,
-{
-    Pending {
-        bid_context: BidContext<P>,
-        contributor_period_end_block: U256,
-        end_block: U256,
-    },
-    Submitted,
+    registry: BidRegistry<P>,
 }
 
 impl<P> BlockConsumer<P>
 where
     P: Provider + Clone,
 {
-    pub fn new(bid_context: BidContext<P>) -> Self {
-        let contributor_period_end_block = bid_context.params().contributor_period_end_block;
-        let end_block = bid_context.params().end_block;
-        Self {
-            state: BidState::Pending {
-                bid_context,
-                contributor_period_end_block,
-                end_block,
-            },
-        }
+    pub fn new(registry: BidRegistry<P>) -> Self {
+        Self { registry }
     }
 
     pub async fn handle_block(&mut self, header: &Header) -> Result<()> {
-        let BidState::Pending {
-            bid_context,
-            contributor_period_end_block,
-            end_block,
-        } = &mut self.state
-        else {
-            println!("Bid already submitted");
-            return Ok(());
-        };
-
+        let window = self.registry.window();
         let block_number = U256::from(header.number);
 
-        if block_number < *contributor_period_end_block {
+        if block_number < window.contributor_period_end_block {
             println!(
                 "Contributor track active (current block {}, public bidding opens at {})",
-                header.number, contributor_period_end_block
+                header.number, window.contributor_period_end_block
             );
             return Ok(());
         }
 
-        if auction_has_ended(block_number, *end_block) {
+        if block_number >= window.end_block {
             println!(
                 "Auction has ended (current block {}, end block {})",
-                header.number, end_block
+                header.number, window.end_block
             );
             return Ok(());
         }
 
-        println!(
-            "Contributor period end reached (current block {}, start block {}, end block {})",
-            header.number, contributor_period_end_block, end_block
-        );
+        for tracked in self.registry.bids_mut().iter_mut() {
+            if !matches!(tracked.state(), BidState::Pending) {
+                continue;
+            }
 
-        let submit_bid_params = bid_context.prepare_submit_bid().await?;
-        let tx_request = bid_context.build_transaction(&submit_bid_params).await?;
-        bid_context.simulate_transaction(&tx_request).await?;
-        bid_context.send_transaction(tx_request).await?;
-        self.state = BidState::Submitted;
+            println!(
+                "Submitting bid for owner {:?} with amount {}",
+                tracked.bid_params().owner,
+                tracked.bid_params().amount
+            );
+
+            match submit_bid(tracked).await {
+                Ok(tx_hash) => tracked.mark_submitted(tx_hash),
+                Err(err) => {
+                    eprintln!("bid failed: {err:?}");
+                    tracked.mark_failed(err.to_string());
+                }
+            }
+        }
 
         Ok(())
     }
+
+    pub fn is_complete(&self) -> bool {
+        self.registry.all_submitted()
+    }
 }
 
-fn auction_has_ended(current_block: U256, end_block: U256) -> bool {
-    current_block >= end_block
+async fn submit_bid<P>(tracked: &mut TrackedBid<P>) -> Result<B256>
+where
+    P: Provider + Clone,
+{
+    let context = tracked.context_mut();
+    let submit_bid_params = context.prepare_submit_bid().await?;
+    let tx_request = context.build_transaction(&submit_bid_params).await?;
+    context.simulate_transaction(&tx_request).await?;
+    context.send_transaction(tx_request).await
 }
 
 async fn align_polling<P>(provider: &P) -> Result<()>

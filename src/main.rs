@@ -1,13 +1,15 @@
 mod auction;
 mod blocks;
 mod config;
+mod registry;
 mod transaction;
 mod validate;
 
 use crate::{
     auction::Auction,
-    blocks::{BidContext, BlockConsumer, BlockProducer},
+    blocks::{BlockConsumer, BlockProducer},
     config::Config,
+    registry::{BidRegistry, PlannedBid},
     validate::PreflightValidator,
 };
 use alloy::{primitives::address, providers::ProviderBuilder, sol};
@@ -50,23 +52,32 @@ async fn main() -> Result<()> {
     let auction = Auction::new(provider.clone(), cca_addr, hook_addr, soulbound_addr);
     let signer_address = config.signer.address();
     let params = auction.load_params(signer_address).await?;
-    PreflightValidator::new(&params, &config.bid_params).run()?;
 
-    let bid_context = BidContext::new(
+    PreflightValidator::new(&params, &config.bids).run()?;
+
+    let planned_bids: Vec<PlannedBid> = config.bids.iter().cloned().map(PlannedBid::new).collect();
+    // customize per-bid TxConfig here if needed before building the registry
+
+    let registry = BidRegistry::new(
         auction,
-        params,
-        config.bid_params.clone(),
+        params.clone(),
+        planned_bids,
         config.signer.clone(),
-        None,
         cca_addr,
-    );
+    )?;
 
     let mut block_producer = BlockProducer::new(provider.clone(), &config.transport).await?;
-    let mut block_consumer = BlockConsumer::new(bid_context);
+    let mut block_consumer = BlockConsumer::new(registry);
 
     while let Some(result) = block_producer.next().await {
         match result {
-            Ok(header) => block_consumer.handle_block(&header).await?,
+            Ok(header) => {
+                block_consumer.handle_block(&header).await?;
+                if block_consumer.is_complete() {
+                    println!("All bids handled, shutting down block stream");
+                    break;
+                }
+            }
             Err(err) => {
                 eprintln!("block stream terminated: {err:?}");
                 break;
