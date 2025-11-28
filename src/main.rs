@@ -2,6 +2,7 @@ mod auction;
 mod blocks;
 mod config;
 mod registry;
+mod ticks;
 mod transaction;
 mod validate;
 
@@ -10,6 +11,7 @@ use crate::{
     blocks::{BlockConsumer, BlockProducer, Completion, ShutdownReason},
     config::Config,
     registry::{BidOutcomeState, BidRegistry, BidSummary, PlannedBid},
+    ticks::align_price_to_tick,
     validate::PreflightValidator,
 };
 use alloy::{
@@ -71,7 +73,24 @@ async fn main() -> Result<()> {
 
     PreflightValidator::new(&params, &config.bids).run()?;
 
-    let planned_bids: Vec<PlannedBid> = config.bids.iter().cloned().map(PlannedBid::new).collect();
+    let planned_bids: Vec<PlannedBid> = config
+        .bids
+        .iter()
+        .cloned()
+        .map(|mut bid| {
+            let aligned = align_price_to_tick(bid.max_bid, &params);
+            if aligned != bid.max_bid {
+                warn!(
+                    owner = ?bid.owner,
+                    original = %bid.max_bid,
+                    adjusted = %aligned,
+                    "max bid adjusted to nearest tick"
+                );
+                bid.max_bid = aligned;
+            }
+            PlannedBid::new(bid)
+        })
+        .collect();
 
     let registry = BidRegistry::new(
         auction,
