@@ -7,7 +7,7 @@ mod validate;
 
 use crate::{
     auction::Auction,
-    blocks::{BlockConsumer, BlockProducer, Completion},
+    blocks::{BlockConsumer, BlockProducer, Completion, ShutdownReason},
     config::Config,
     registry::{BidOutcomeState, BidRegistry, BidSummary, PlannedBid},
     validate::PreflightValidator,
@@ -19,6 +19,8 @@ use alloy::{
 };
 use eyre::Result;
 use futures_util::StreamExt;
+use tracing::{error, info, warn};
+use tracing_subscriber::{EnvFilter, fmt};
 
 sol!(
     #[sol(rpc)]
@@ -47,7 +49,12 @@ const SOULBOUND_ADDRESS: Address = address!("0xBf3CF56c587F5e833337200536A52E171
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    fmt()
+        .with_env_filter(EnvFilter::from_default_env().add_directive("aztec_cca=info".parse()?))
+        .init();
+
     let config = Config::from_env()?;
+    info!(bids = config.bids.len(), "Configuration loaded");
 
     let provider = ProviderBuilder::new()
         .connect_with(&config.transport)
@@ -81,13 +88,13 @@ async fn main() -> Result<()> {
         match result {
             Ok(header) => match block_consumer.handle_block(&header).await? {
                 Completion::Pending => {}
-                Completion::Finished(summary) => {
-                    log_summary(&summary);
+                Completion::Finished { summary, reason } => {
+                    log_summary(&summary, &reason);
                     break;
                 }
             },
             Err(err) => {
-                eprintln!("block stream terminated: {err:?}");
+                error!(?err, "block stream terminated");
                 break;
             }
         }
@@ -96,29 +103,47 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn log_summary(summary: &BidSummary) {
-    println!(
-        "Bid summary -> submitted: {}, failed: {}, pending: {}",
-        summary.submitted, summary.failed, summary.pending
-    );
+fn log_summary(summary: &BidSummary, reason: &ShutdownReason) {
+    match reason {
+        ShutdownReason::AllBidsProcessed => info!(
+            submitted = summary.submitted,
+            failed = summary.failed,
+            pending = summary.pending,
+            "bid summary"
+        ),
+        ShutdownReason::AuctionEndedWithPending => warn!(
+            submitted = summary.submitted,
+            failed = summary.failed,
+            pending = summary.pending,
+            "bid summary (auction ended early)"
+        ),
+    }
 
     for outcome in &summary.outcomes {
         match &outcome.state {
-            BidOutcomeState::Submitted { tx_hash } => println!(
-                "  owner {:?} amount {} submitted (tx {:?})",
-                outcome.owner, outcome.amount, tx_hash
+            BidOutcomeState::Submitted { tx_hash } => info!(
+                owner = ?outcome.owner,
+                amount = outcome.amount,
+                tx_hash = ?tx_hash,
+                "bid submitted"
             ),
-            BidOutcomeState::Failed { error } => println!(
-                "  owner {:?} amount {} failed: {}",
-                outcome.owner, outcome.amount, error
+            BidOutcomeState::Failed { error } => error!(
+                owner = ?outcome.owner,
+                amount = outcome.amount,
+                error,
+                "bid failed"
             ),
             BidOutcomeState::Pending {
                 attempts,
                 max_retries,
                 last_error,
-            } => println!(
-                "  owner {:?} amount {} pending ({}/{} attempts, last_error={:?})",
-                outcome.owner, outcome.amount, attempts, max_retries, last_error
+            } => info!(
+                owner = ?outcome.owner,
+                amount = outcome.amount,
+                attempts,
+                max_retries,
+                last_error = ?last_error,
+                "bid pending"
             ),
         }
     }

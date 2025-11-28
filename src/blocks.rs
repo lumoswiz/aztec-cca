@@ -23,6 +23,7 @@ use alloy::{
 use eyre::{Result, eyre};
 use futures_util::{Stream, StreamExt, stream::BoxStream};
 use tokio::time::sleep;
+use tracing::{error, info, info_span, warn};
 
 pub struct BlockProducer {
     stream: BoxStream<'static, Result<Header>>,
@@ -128,10 +129,7 @@ where
     pub async fn send_transaction(&self, tx: TransactionRequest) -> Result<B256> {
         let pending = self.auction.provider.send_transaction(tx).await?;
         let receipt = pending.get_receipt().await?;
-        println!(
-            "Bid submitted in transaction: {:?}",
-            receipt.transaction_hash
-        );
+        info!(tx = ?receipt.transaction_hash, "Bid submitted");
         Ok(receipt.transaction_hash)
     }
 }
@@ -156,19 +154,34 @@ where
         let block_number = U256::from(header.number);
 
         if block_number < window.contributor_period_end_block {
-            println!(
-                "Contributor track active (current block {}, public bidding opens at {})",
-                header.number, window.contributor_period_end_block
+            info!(
+                block = header.number,
+                start = %window.contributor_period_end_block,
+                "Contributor track active"
             );
             return Ok(Completion::Pending);
         }
 
         if block_number >= window.end_block {
-            println!(
-                "Auction has ended (current block {}, end block {})",
-                header.number, window.end_block
-            );
-            return Ok(Completion::Finished(self.registry.summary()));
+            let summary = self.registry.summary();
+            let pending = summary.pending;
+            if pending > 0 {
+                warn!(
+                    pending,
+                    block = header.number,
+                    "Auction ended with pending bids"
+                );
+            } else {
+                info!(block = header.number, "Auction ended");
+            }
+            return Ok(Completion::Finished {
+                summary,
+                reason: if pending == 0 {
+                    ShutdownReason::AllBidsProcessed
+                } else {
+                    ShutdownReason::AuctionEndedWithPending
+                },
+            });
         }
 
         for tracked in self.registry.bids_mut().iter_mut() {
@@ -176,35 +189,41 @@ where
                 continue;
             }
 
-            println!(
-                "Submitting bid for owner {:?} with amount {} (attempt {}/{})",
-                tracked.bid_params().owner,
-                tracked.bid_params().amount,
-                tracked.attempts() + 1,
-                tracked.max_retries()
+            info!(
+                owner = ?tracked.bid_params().owner,
+                amount = tracked.bid_params().amount,
+                attempt = tracked.attempts() + 1,
+                max_retries = tracked.max_retries(),
+                "Submitting bid"
             );
 
             match submit_bid(tracked).await {
                 Ok(tx_hash) => tracked.mark_submitted(tx_hash),
-                Err(err) => {
-                    let message = format!("bid error: {err:?}");
-                    match tracked.record_failure(message.clone()) {
-                        RetryStatus::Retrying(attempts) => {
-                            eprintln!(
-                                "bid retry scheduled (attempt {attempts}/{}): {message}",
-                                tracked.max_retries()
-                            );
-                        }
-                        RetryStatus::Exhausted => {
-                            eprintln!("bid failed permanently: {message}");
-                        }
-                    }
-                }
+                Err(err) => match tracked.record_failure(format!("{err:?}")) {
+                    RetryStatus::Retrying(attempts) => warn!(
+                        owner = ?tracked.bid_params().owner,
+                        attempts,
+                        max_retries = tracked.max_retries(),
+                        error = ?err,
+                        "bid retry scheduled"
+                    ),
+                    RetryStatus::Exhausted => error!(
+                        owner = ?tracked.bid_params().owner,
+                        attempts = tracked.attempts(),
+                        max_retries = tracked.max_retries(),
+                        error = ?err,
+                        "bid failed permanently"
+                    ),
+                },
             }
         }
 
         if self.registry.all_done() {
-            Ok(Completion::Finished(self.registry.summary()))
+            let summary = self.registry.summary();
+            Ok(Completion::Finished {
+                summary,
+                reason: ShutdownReason::AllBidsProcessed,
+            })
         } else {
             Ok(Completion::Pending)
         }
@@ -214,17 +233,37 @@ where
 #[derive(Debug)]
 pub enum Completion {
     Pending,
-    Finished(BidSummary),
+    Finished {
+        summary: BidSummary,
+        reason: ShutdownReason,
+    },
+}
+
+#[derive(Debug)]
+pub enum ShutdownReason {
+    AllBidsProcessed,
+    AuctionEndedWithPending,
 }
 
 async fn submit_bid<P>(tracked: &mut TrackedBid<P>) -> Result<B256>
 where
     P: Provider + Clone,
 {
+    let span = info_span!(
+        "bid",
+        owner = ?tracked.bid_params().owner,
+        amount = tracked.bid_params().amount,
+        attempt = tracked.attempts() + 1
+    );
+    let _enter = span.enter();
+
     let context = tracked.context_mut();
     let submit_bid_params = context.prepare_submit_bid().await?;
+    info!("prepared submit params");
     let tx_request = context.build_transaction(&submit_bid_params).await?;
+    info!("built transaction request");
     context.simulate_transaction(&tx_request).await?;
+    info!("simulation succeeded");
     context.send_transaction(tx_request).await
 }
 
