@@ -9,7 +9,8 @@ use crate::{
     auction::Auction,
     blocks::{BlockConsumer, BlockProducer},
     config::Config,
-    registry::BidRegistry,
+    registry::{BidRegistry, PlannedBid},
+    validate::PreflightValidator,
 };
 use alloy::{primitives::address, providers::ProviderBuilder, sol};
 use eyre::Result;
@@ -52,12 +53,16 @@ async fn main() -> Result<()> {
     let signer_address = config.signer.address();
     let params = auction.load_params(signer_address).await?;
 
+    PreflightValidator::new(&params, &config.bids).run()?;
+
+    let planned_bids: Vec<PlannedBid> = config.bids.iter().cloned().map(PlannedBid::new).collect();
+    // customize per-bid TxConfig here if needed before building the registry
+
     let registry = BidRegistry::new(
         auction,
         params.clone(),
-        config.bids.clone(),
+        planned_bids,
         config.signer.clone(),
-        None,
         cca_addr,
     )?;
 

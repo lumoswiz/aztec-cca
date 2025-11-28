@@ -86,10 +86,6 @@ impl<P> BidContext<P>
 where
     P: Provider + Clone,
 {
-    pub fn params(&self) -> &AuctionParams {
-        &self.params
-    }
-
     pub fn new(
         auction: Auction<P>,
         params: AuctionParams,

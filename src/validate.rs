@@ -4,51 +4,75 @@ use eyre::{Result, eyre};
 
 pub struct PreflightValidator<'a> {
     params: &'a AuctionParams,
-    bid: &'a BidParams,
+    bids: &'a [BidParams],
 }
 
 impl<'a> PreflightValidator<'a> {
-    pub fn new(params: &'a AuctionParams, bid: &'a BidParams) -> Self {
-        Self { params, bid }
+    pub fn new(params: &'a AuctionParams, bids: &'a [BidParams]) -> Self {
+        Self { params, bids }
     }
 
     pub fn run(&self) -> Result<()> {
-        self.ensure_amount_positive()?;
-        self.ensure_max_price_within_bounds()?;
+        for (idx, bid) in self.bids.iter().enumerate() {
+            self.ensure_amount_positive(idx, bid)?;
+            self.ensure_max_price_within_bounds(idx, bid)?;
+            self.ensure_tick_alignment(idx, bid)?;
+        }
         self.ensure_within_purchase_limit()?;
         // self.ensure_has_soulbound_token()?;
-        self.params.ensure_tick_aligned(self.bid.max_bid)?;
         Ok(())
     }
 
-    fn ensure_amount_positive(&self) -> Result<()> {
-        if self.bid.amount == 0 {
-            return Err(eyre!("BID_AMOUNT must be greater than zero"));
+    fn ensure_amount_positive(&self, idx: usize, bid: &BidParams) -> Result<()> {
+        if bid.amount == 0 {
+            let bid_no = idx + 1;
+            return Err(eyre!(
+                "bid #{bid_no} (owner {}) amount must be greater than zero",
+                bid.owner
+            ));
         }
         Ok(())
     }
 
-    fn ensure_max_price_within_bounds(&self) -> Result<()> {
-        if self.bid.max_bid > self.params.max_bid_price {
+    fn ensure_max_price_within_bounds(&self, idx: usize, bid: &BidParams) -> Result<()> {
+        if bid.max_bid > self.params.max_bid_price {
+            let bid_no = idx + 1;
             return Err(eyre!(
-                "MAX_BID_PRICE ({}) exceeds auction cap ({})",
-                self.bid.max_bid,
+                "bid #{bid_no} (owner {}) MAX_BID_PRICE ({}) exceeds cap ({})",
+                bid.owner,
+                bid.max_bid,
                 self.params.max_bid_price
             ));
         }
         Ok(())
     }
 
+    fn ensure_tick_alignment(&self, idx: usize, bid: &BidParams) -> Result<()> {
+        let bid_no = idx + 1;
+        self.params.ensure_tick_aligned(bid.max_bid).map_err(|err| {
+            eyre!(
+                "bid #{bid_no} (owner {}) not tick-aligned: {err}",
+                bid.owner
+            )
+        })
+    }
+
     fn ensure_within_purchase_limit(&self) -> Result<()> {
-        let total_after_bid = self.params.total_purchased + U256::from(self.bid.amount);
-        if total_after_bid > self.params.max_purchase_limit {
-            return Err(eyre!(
-                "bid amount ({}) exceeds remaining allocation (purchased {}, cap {})",
-                self.bid.amount,
-                self.params.total_purchased,
-                self.params.max_purchase_limit
-            ));
+        let mut running_total = self.params.total_purchased;
+
+        for (idx, bid) in self.bids.iter().enumerate() {
+            running_total += U256::from(bid.amount);
+            if running_total > self.params.max_purchase_limit {
+                let bid_no = idx + 1;
+                return Err(eyre!(
+                    "bids exceed allocation: bid #{bid_no} (owner {}) pushes total {} over cap {}",
+                    bid.owner,
+                    running_total,
+                    self.params.max_purchase_limit
+                ));
+            }
         }
+
         Ok(())
     }
 

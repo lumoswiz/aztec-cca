@@ -3,7 +3,6 @@ use crate::{
     blocks::BidContext,
     config::BidParams,
     transaction::TxConfig,
-    validate::PreflightValidator,
 };
 use alloy::{
     primitives::{Address, B256, U256},
@@ -28,15 +27,10 @@ where
     pub fn new(
         auction: Auction<P>,
         params: AuctionParams,
-        bids: Vec<BidParams>,
+        bids: Vec<PlannedBid>,
         signer: PrivateKeySigner,
-        tx_config: Option<TxConfig>,
         cca_addr: Address,
     ) -> Result<Self> {
-        for bid in &bids {
-            PreflightValidator::new(&params, bid).run()?;
-        }
-
         let window = AuctionWindow {
             contributor_period_end_block: params.contributor_period_end_block,
             end_block: params.end_block,
@@ -44,13 +38,14 @@ where
 
         let tracked = bids
             .into_iter()
-            .map(|bid_params| {
+            .map(|planned| {
+                let bid_params = planned.params;
                 let context = BidContext::new(
                     auction.clone(),
                     params.clone(),
                     bid_params.clone(),
                     signer.clone(),
-                    tx_config.clone(),
+                    planned.tx_config,
                     cca_addr,
                 );
                 TrackedBid {
@@ -79,6 +74,27 @@ where
         self.bids
             .iter()
             .all(|bid| matches!(bid.state, BidState::Submitted { .. }))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PlannedBid {
+    pub params: BidParams,
+    pub tx_config: Option<TxConfig>,
+}
+
+impl PlannedBid {
+    pub fn new(params: BidParams) -> Self {
+        Self {
+            params,
+            tx_config: None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_tx_config(mut self, tx_config: TxConfig) -> Self {
+        self.tx_config = Some(tx_config);
+        self
     }
 }
 
