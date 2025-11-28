@@ -8,8 +8,8 @@ mod registry;
 mod transaction;
 mod validate;
 
-use crate::{app::run_bot, config::Config, logging::init_logging};
-use alloy::sol;
+use crate::{app::AuctionBot, config::Config, logging::init_logging};
+use alloy::{providers::ProviderBuilder, sol};
 use eyre::Result;
 
 sol!(
@@ -37,5 +37,11 @@ sol!(
 async fn main() -> Result<()> {
     init_logging()?;
     let config = Config::from_env()?;
-    run_bot(config).await
+    let provider = ProviderBuilder::new()
+        .connect_with(&config.transport)
+        .await?;
+    AuctionBot::build_with_provider(provider, config)
+        .await?
+        .run()
+        .await
 }

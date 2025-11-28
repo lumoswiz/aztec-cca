@@ -5,6 +5,7 @@ use crate::{
     transaction::{TxBuilder, TxConfig},
 };
 use std::{
+    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -25,15 +26,19 @@ use futures_util::{Stream, StreamExt, stream::BoxStream};
 use tokio::time::sleep;
 use tracing::{error, info, info_span, instrument, warn};
 
-pub struct BlockProducer {
+pub struct BlockProducer<P>
+where
+    P: Provider + Clone + Unpin,
+{
     stream: BoxStream<'static, Result<Header>>,
+    _marker: PhantomData<P>,
 }
 
-impl BlockProducer {
-    pub async fn new<P>(provider: P, endpoint: &BuiltInConnectionString) -> Result<Self>
-    where
-        P: Provider + Clone + Send + Sync + 'static,
-    {
+impl<P> BlockProducer<P>
+where
+    P: Provider + Clone + Send + Sync + Unpin + 'static,
+{
+    pub async fn new(provider: P, endpoint: &BuiltInConnectionString) -> Result<Self> {
         let stream = match endpoint {
             BuiltInConnectionString::Ws(_, _) | BuiltInConnectionString::Ipc(_) => {
                 let sub = provider.subscribe_blocks().await?;
@@ -58,15 +63,22 @@ impl BlockProducer {
             }
         };
 
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            _marker: PhantomData,
+        })
     }
 }
 
-impl Stream for BlockProducer {
+impl<P> Stream for BlockProducer<P>
+where
+    P: Provider + Clone + Unpin,
+{
     type Item = Result<Header>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self.stream).poll_next(cx)
+        let this = self.as_mut().get_mut();
+        Pin::new(&mut this.stream).poll_next(cx)
     }
 }
 
