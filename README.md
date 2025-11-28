@@ -2,18 +2,6 @@
 
 Bot for submitting bids to Aztec’s Uniswap Continuous Clearing Auction (CCA).
 
-## Highlights
-- Multiple bids per run, each with independent state (`Pending`, `Submitted`, `Failed`).
-- Automatic tick alignment to the nearest valid CCA tick with warnings when an entry is adjusted.
-- Full preflight validation (amount > 0, capped MAX_BID_PRICE, allocation limits).
-- Transaction build/simulate/send loop with up to three retries per bid before marking as failed.
-- Graceful shutdown: exits once every bid is submitted/exhausted or when the auction window ends.
-
-## Prerequisites
-- [Rust](https://rustup.rs/) 1.75+ (edition 2021).
-- Access to an Ethereum RPC endpoint (HTTP, WebSocket, or IPC).
-- An Ethereum account/private key funded with enough ETH to cover the configured bids and gas.
-
 ## Configure Environment Variables
 
 - `RPC_ENDPOINT` accepts HTTP or WS URLs, or an IPC path inferred by Alloy’s `ProviderBuilder`.
