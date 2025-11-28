@@ -152,6 +152,7 @@ where
     Pending {
         bid_context: BidContext<P>,
         contributor_period_end_block: U256,
+        end_block: U256,
     },
     Submitted,
 }
@@ -162,10 +163,12 @@ where
 {
     pub fn new(bid_context: BidContext<P>) -> Self {
         let contributor_period_end_block = bid_context.params().contributor_period_end_block;
+        let end_block = bid_context.params().end_block;
         Self {
             state: BidState::Pending {
                 bid_context,
                 contributor_period_end_block,
+                end_block,
             },
         }
     }
@@ -174,6 +177,7 @@ where
         let BidState::Pending {
             bid_context,
             contributor_period_end_block,
+            end_block,
         } = &mut self.state
         else {
             println!("Bid already submitted");
@@ -183,13 +187,24 @@ where
         let block_number = U256::from(header.number);
 
         if block_number < *contributor_period_end_block {
-            println!("Received block number: {}", header.number);
+            println!(
+                "Contributor track active (current block {}, public bidding opens at {})",
+                header.number, contributor_period_end_block
+            );
+            return Ok(());
+        }
+
+        if auction_has_ended(block_number, *end_block) {
+            println!(
+                "Auction has ended (current block {}, end block {})",
+                header.number, end_block
+            );
             return Ok(());
         }
 
         println!(
-            "Contributor period end reached (current block {}, end block {})",
-            header.number, contributor_period_end_block
+            "Contributor period end reached (current block {}, start block {}, end block {})",
+            header.number, contributor_period_end_block, end_block
         );
 
         let submit_bid_params = bid_context.prepare_submit_bid().await?;
@@ -200,6 +215,10 @@ where
 
         Ok(())
     }
+}
+
+fn auction_has_ended(current_block: U256, end_block: U256) -> bool {
+    current_block >= end_block
 }
 
 async fn align_polling<P>(provider: &P) -> Result<()>

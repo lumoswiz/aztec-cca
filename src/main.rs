@@ -1,8 +1,8 @@
 mod auction;
 mod blocks;
 mod config;
-mod validate;
 mod transaction;
+mod validate;
 
 use crate::{
     auction::Auction,
@@ -45,9 +45,11 @@ async fn main() -> Result<()> {
 
     let cca_addr = address!("0x608c4e792C65f5527B3f70715deA44d3b302F4Ee");
     let hook_addr = address!("0x2DD6e0E331DE9743635590F6c8BC5038374CAc9D");
+    let soulbound_addr = address!("0xBf3CF56c587F5e833337200536A52E171EF29A09");
 
-    let auction = Auction::new(provider.clone(), cca_addr, hook_addr);
-    let params = auction.load_params().await?;
+    let auction = Auction::new(provider.clone(), cca_addr, hook_addr, soulbound_addr);
+    let signer_address = config.signer.address();
+    let params = auction.load_params(signer_address).await?;
     PreflightValidator::new(&params, &config.bid_params).run()?;
 
     let bid_context = BidContext::new(
