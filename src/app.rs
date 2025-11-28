@@ -13,14 +13,15 @@ use alloy::{
 };
 use eyre::Result;
 use futures_util::StreamExt;
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 const CCA_ADDRESS: Address = address!("0x608c4e792C65f5527B3f70715deA44d3b302F4Ee");
 const HOOK_ADDRESS: Address = address!("0x2DD6e0E331DE9743635590F6c8BC5038374CAc9D");
 const SOULBOUND_ADDRESS: Address = address!("0xBf3CF56c587F5e833337200536A52E171EF29A09");
 
+#[instrument(skip(config))]
 pub async fn run_bot(config: Config) -> Result<()> {
-    info!(bids = config.bids.len(), "Configuration loaded");
+    info!(bids = config.bids.len(), "configuration loaded");
 
     let provider = ProviderBuilder::new()
         .connect_with(&config.transport)

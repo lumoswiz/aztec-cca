@@ -23,7 +23,7 @@ use alloy::{
 use eyre::{Result, eyre};
 use futures_util::{Stream, StreamExt, stream::BoxStream};
 use tokio::time::sleep;
-use tracing::{error, info, info_span, warn};
+use tracing::{error, info, info_span, instrument, warn};
 
 pub struct BlockProducer {
     stream: BoxStream<'static, Result<Header>>,
@@ -129,7 +129,7 @@ where
     pub async fn send_transaction(&self, tx: TransactionRequest) -> Result<B256> {
         let pending = self.auction.provider.send_transaction(tx).await?;
         let receipt = pending.get_receipt().await?;
-        info!(tx = ?receipt.transaction_hash, "Bid submitted");
+        info!(tx = ?receipt.transaction_hash, "bid submitted");
         Ok(receipt.transaction_hash)
     }
 }
@@ -149,15 +149,15 @@ where
         Self { registry }
     }
 
+    #[instrument(skip_all, fields(block = header.number))]
     pub async fn handle_block(&mut self, header: &Header) -> Result<Completion> {
         let window = self.registry.window();
         let block_number = U256::from(header.number);
 
         if block_number < window.contributor_period_end_block {
             info!(
-                block = header.number,
-                start = %window.contributor_period_end_block,
-                "Contributor track active"
+                end_block = %window.contributor_period_end_block,
+                "contributor track active"
             );
             return Ok(Completion::Pending);
         }
@@ -169,10 +169,10 @@ where
                 warn!(
                     pending,
                     block = header.number,
-                    "Auction ended with pending bids"
+                    "auction ended with pending bids"
                 );
             } else {
-                info!(block = header.number, "Auction ended");
+                info!(block = header.number, "auction ended");
             }
             return Ok(Completion::Finished {
                 summary,
@@ -194,7 +194,7 @@ where
                 amount = tracked.bid_params().amount,
                 attempt = tracked.attempts() + 1,
                 max_retries = tracked.max_retries(),
-                "Submitting bid"
+                "submitting bid"
             );
 
             match submit_bid(tracked).await {
