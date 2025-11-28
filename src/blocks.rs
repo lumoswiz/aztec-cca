@@ -1,7 +1,7 @@
 use crate::{
     auction::{Auction, AuctionParams, SubmitBidParams},
     config::BidParams,
-    registry::{BidRegistry, BidState, TrackedBid},
+    registry::{BidRegistry, BidSummary, RetryStatus, TrackedBid},
     transaction::{TxBuilder, TxConfig},
 };
 use std::{
@@ -151,7 +151,7 @@ where
         Self { registry }
     }
 
-    pub async fn handle_block(&mut self, header: &Header) -> Result<()> {
+    pub async fn handle_block(&mut self, header: &Header) -> Result<Completion> {
         let window = self.registry.window();
         let block_number = U256::from(header.number);
 
@@ -160,7 +160,7 @@ where
                 "Contributor track active (current block {}, public bidding opens at {})",
                 header.number, window.contributor_period_end_block
             );
-            return Ok(());
+            return Ok(Completion::Pending);
         }
 
         if block_number >= window.end_block {
@@ -168,35 +168,53 @@ where
                 "Auction has ended (current block {}, end block {})",
                 header.number, window.end_block
             );
-            return Ok(());
+            return Ok(Completion::Finished(self.registry.summary()));
         }
 
         for tracked in self.registry.bids_mut().iter_mut() {
-            if !matches!(tracked.state(), BidState::Pending) {
+            if !tracked.is_pending() {
                 continue;
             }
 
             println!(
-                "Submitting bid for owner {:?} with amount {}",
+                "Submitting bid for owner {:?} with amount {} (attempt {}/{})",
                 tracked.bid_params().owner,
-                tracked.bid_params().amount
+                tracked.bid_params().amount,
+                tracked.attempts() + 1,
+                tracked.max_retries()
             );
 
             match submit_bid(tracked).await {
                 Ok(tx_hash) => tracked.mark_submitted(tx_hash),
                 Err(err) => {
-                    eprintln!("bid failed: {err:?}");
-                    tracked.mark_failed(err.to_string());
+                    let message = format!("bid error: {err:?}");
+                    match tracked.record_failure(message.clone()) {
+                        RetryStatus::Retrying(attempts) => {
+                            eprintln!(
+                                "bid retry scheduled (attempt {attempts}/{}): {message}",
+                                tracked.max_retries()
+                            );
+                        }
+                        RetryStatus::Exhausted => {
+                            eprintln!("bid failed permanently: {message}");
+                        }
+                    }
                 }
             }
         }
 
-        Ok(())
+        if self.registry.all_done() {
+            Ok(Completion::Finished(self.registry.summary()))
+        } else {
+            Ok(Completion::Pending)
+        }
     }
+}
 
-    pub fn is_complete(&self) -> bool {
-        self.registry.all_submitted()
-    }
+#[derive(Debug)]
+pub enum Completion {
+    Pending,
+    Finished(BidSummary),
 }
 
 async fn submit_bid<P>(tracked: &mut TrackedBid<P>) -> Result<B256>
