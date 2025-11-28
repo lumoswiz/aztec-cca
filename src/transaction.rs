@@ -16,6 +16,7 @@ pub struct FeeOverrides {
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub enum AccessListConfig {
     #[default]
     None,
@@ -29,6 +30,7 @@ pub struct TxConfig {
     pub access_list: AccessListConfig,
 }
 
+#[allow(dead_code)]
 impl TxConfig {
     pub fn new() -> Self {
         Self::default()
