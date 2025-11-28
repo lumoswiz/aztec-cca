@@ -5,7 +5,7 @@ Bot for submitting bids to Aztec’s Uniswap Continuous Clearing Auction (CCA).
 ## Configure Environment Variables
 
 - `RPC_ENDPOINT` accepts HTTP or WS URLs, or an IPC path inferred by Alloy’s `ProviderBuilder`.
-- `PRIVATE_KEY` must control the funds and will be used as the default `owner` when not supplied in `bids.toml`.
+- `PRIVATE_KEY` signs the bid transactions and provides the default `owner` for `submitBid` whenever a `bids.toml` entry omits `owner`.
 
 ## Configure Bids
 
