@@ -1,5 +1,6 @@
-use crate::auction::AuctionParams;
+use crate::{auction::AuctionParams, config::BidParams, registry::PlannedBid};
 use alloy::primitives::U256;
+use tracing::warn;
 
 pub fn align_price_to_tick(price: U256, params: &AuctionParams) -> U256 {
     let floor = params.floor_price;
@@ -25,6 +26,25 @@ pub fn align_price_to_tick(price: U256, params: &AuctionParams) -> U256 {
     let choose_up = rem > spacing - rem;
     let candidate = if choose_up { up } else { down };
     candidate.min(cap)
+}
+
+pub fn preprocess_bids(bids: &[BidParams], params: &AuctionParams) -> Vec<PlannedBid> {
+    bids.iter()
+        .cloned()
+        .map(|mut bid| {
+            let aligned = align_price_to_tick(bid.max_bid, params);
+            if aligned != bid.max_bid {
+                warn!(
+                    owner = ?bid.owner,
+                    original = %bid.max_bid,
+                    adjusted = %aligned,
+                    "max bid adjusted to nearest tick"
+                );
+                bid.max_bid = aligned;
+            }
+            PlannedBid::new(bid)
+        })
+        .collect()
 }
 
 #[cfg(test)]
