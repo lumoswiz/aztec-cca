@@ -1,10 +1,11 @@
 use crate::{
     auction::{Auction, AuctionParams, SubmitBidParams},
     config::BidParams,
-    registry::{BidRegistry, BidSummary, RetryStatus, TrackedBid},
+    registry::{AuctionWindow, BidRegistry, BidSummary, RetryStatus, TrackedBid},
     transaction::{TxBuilder, TxConfig},
 };
 use std::{
+    fmt,
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
@@ -24,7 +25,7 @@ use alloy::{
 use eyre::{Result, eyre};
 use futures_util::{Stream, StreamExt, stream::BoxStream};
 use tokio::time::sleep;
-use tracing::{error, info, info_span, instrument, warn};
+use tracing::{Span, error, info, info_span, instrument, warn};
 
 pub struct BlockProducer<P>
 where
@@ -151,6 +152,7 @@ where
     P: Provider + Clone,
 {
     registry: BidRegistry<P>,
+    phase: PhaseTracker,
 }
 
 impl<P> BlockConsumer<P>
@@ -158,42 +160,35 @@ where
     P: Provider + Clone,
 {
     pub fn new(registry: BidRegistry<P>) -> Self {
-        Self { registry }
+        let phase = PhaseTracker::new(registry.window());
+        Self { registry, phase }
     }
 
-    #[instrument(skip_all, fields(block = header.number))]
+    #[instrument(skip_all, fields(block = header.number, phase = tracing::field::Empty))]
     pub async fn handle_block(&mut self, header: &Header) -> Result<Completion> {
-        let window = self.registry.window();
+        Span::current().record("phase", &format_args!("{}", self.phase.phase()));
         let block_number = U256::from(header.number);
-
-        if block_number < window.contributor_period_end_block {
-            info!(
-                end_block = %window.contributor_period_end_block,
-                "contributor track active"
-            );
+        if block_number < self.phase.contributor_period_end_block() {
+            info!("contributor track active");
             return Ok(Completion::Pending);
         }
 
-        if block_number >= window.end_block {
-            let summary = self.registry.summary();
-            let pending = summary.pending;
-            if pending > 0 {
-                warn!(
-                    pending,
-                    block = header.number,
-                    "auction ended with pending bids"
-                );
-            } else {
-                info!(block = header.number, "auction ended");
-            }
-            return Ok(Completion::Finished {
-                summary,
-                reason: if pending == 0 {
-                    ShutdownReason::AllBidsProcessed
-                } else {
-                    ShutdownReason::AuctionEndedWithPending
-                },
-            });
+        match self.phase.phase() {
+            Phase::Submit => self.handle_submit_phase(header).await,
+            Phase::AwaitEnd => self.handle_await_end_phase(header),
+            Phase::Exit => self.handle_exit_phase(header),
+            Phase::AwaitClaim => self.handle_await_claim_phase(header),
+            Phase::Claim => self.handle_claim_phase(header),
+            Phase::Done => Ok(self.finish_with_summary()),
+        }
+    }
+
+    async fn handle_submit_phase(&mut self, header: &Header) -> Result<Completion> {
+        let block_number = U256::from(header.number);
+        if block_number >= self.phase.end_block() {
+            warn!(block = header.number, "contribution window closed");
+            self.phase.advance(Phase::Exit);
+            return self.handle_exit_phase(header);
         }
 
         for tracked in self.registry.bids_mut().iter_mut() {
@@ -231,14 +226,66 @@ where
         }
 
         if self.registry.all_done() {
-            let summary = self.registry.summary();
-            Ok(Completion::Finished {
-                summary,
-                reason: ShutdownReason::AllBidsProcessed,
-            })
-        } else {
-            Ok(Completion::Pending)
+            info!(
+                block = header.number,
+                "all bids processed, awaiting end block"
+            );
+            self.phase.advance(Phase::AwaitEnd);
+            return self.handle_await_end_phase(header);
         }
+
+        Ok(Completion::Pending)
+    }
+
+    fn handle_await_end_phase(&mut self, header: &Header) -> Result<Completion> {
+        let block_number = U256::from(header.number);
+        if block_number >= self.phase.end_block() {
+            info!(
+                block = header.number,
+                end_block = %self.phase.end_block(),
+                "end block reached"
+            );
+            self.phase.advance(Phase::Exit);
+            return self.handle_exit_phase(header);
+        }
+
+        info!(
+            block = header.number,
+            end_block = %self.phase.end_block(),
+            "awaiting end block"
+        );
+        Ok(Completion::Pending)
+    }
+
+    fn handle_exit_phase(&mut self, header: &Header) -> Result<Completion> {
+        info!(block = header.number, "exit phase not implemented yet");
+        self.phase.advance(Phase::AwaitClaim);
+        self.handle_await_claim_phase(header)
+    }
+
+    fn handle_await_claim_phase(&mut self, header: &Header) -> Result<Completion> {
+        info!(
+            block = header.number,
+            "await claim phase not implemented yet"
+        );
+        self.phase.advance(Phase::Claim);
+        self.handle_claim_phase(header)
+    }
+
+    fn handle_claim_phase(&mut self, header: &Header) -> Result<Completion> {
+        info!(block = header.number, "claim phase not implemented yet");
+        self.phase.advance(Phase::Done);
+        Ok(self.finish_with_summary())
+    }
+
+    fn finish_with_summary(&mut self) -> Completion {
+        let summary = self.registry.summary();
+        let reason = if summary.pending == 0 {
+            ShutdownReason::AllBidsProcessed
+        } else {
+            ShutdownReason::AuctionEndedWithPending
+        };
+        Completion::Finished { summary, reason }
     }
 }
 
@@ -293,4 +340,63 @@ where
     }
     sleep(Duration::from_millis(250)).await;
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    Submit,
+    AwaitEnd,
+    Exit,
+    AwaitClaim,
+    Claim,
+    Done,
+}
+
+impl fmt::Display for Phase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Phase::Submit => write!(f, "Submit"),
+            Phase::AwaitEnd => write!(f, "AwaitEnd"),
+            Phase::Exit => write!(f, "Exit"),
+            Phase::AwaitClaim => write!(f, "AwaitClaim"),
+            Phase::Claim => write!(f, "Claim"),
+            Phase::Done => write!(f, "Done"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PhaseTracker {
+    current: Phase,
+    contributor_period_end_block: U256,
+    end_block: U256,
+}
+
+impl PhaseTracker {
+    pub fn new(window: &AuctionWindow) -> Self {
+        Self {
+            current: Phase::Submit,
+            contributor_period_end_block: window.contributor_period_end_block,
+            end_block: window.end_block,
+        }
+    }
+
+    pub fn phase(&self) -> Phase {
+        self.current
+    }
+
+    pub fn advance(&mut self, next: Phase) {
+        if self.current != next {
+            info!(phase = %self.current, next = %next, "phase advanced");
+            self.current = next;
+        }
+    }
+
+    pub fn contributor_period_end_block(&self) -> U256 {
+        self.contributor_period_end_block
+    }
+
+    pub fn end_block(&self) -> U256 {
+        self.end_block
+    }
 }
