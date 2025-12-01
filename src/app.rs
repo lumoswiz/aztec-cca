@@ -1,10 +1,10 @@
 use crate::{
     auction::Auction,
     bids::preprocess_bids,
-    blocks::{BlockConsumer, BlockProducer, Completion},
+    blocks::{BlockConsumer, BlockProducer, Completion, ShutdownReason},
     config::Config,
     logging::{log_summary, persist_summary},
-    registry::BidRegistry,
+    registry::{BidRegistry, BidSummary},
     validate::PreflightValidator,
 };
 use alloy::{
@@ -65,29 +65,46 @@ where
 
     #[instrument(skip_all)]
     pub async fn run(mut self) -> Result<()> {
-        while let Some(result) = self.block_producer.next().await {
-            match result {
-                Ok(header) => match self.block_consumer.handle_block(&header).await? {
+        loop {
+            match self.block_producer.next().await {
+                Some(Ok(header)) => match self.block_consumer.handle_block(&header).await? {
                     Completion::Pending => {}
                     Completion::Finished { summary, reason } => {
-                        log_summary(&summary, &reason);
-                        match persist_summary(&summary, &reason) {
-                            Ok(path) => {
-                                info!(file = %path.display(), "bid summary persisted");
-                            }
-                            Err(err) => {
-                                warn!(?err, "failed to persist bid summary");
-                            }
-                        }
+                        self.record_summary(Some(summary), reason);
                         break;
                     }
                 },
-                Err(err) => {
+                Some(Err(err)) => {
                     error!(?err, "block stream terminated");
+                    let reason = if self.block_consumer.has_pending_bids() {
+                        ShutdownReason::BlockStreamErrorWithPending
+                    } else {
+                        ShutdownReason::BlockStreamError
+                    };
+                    self.record_summary(None, reason);
+                    break;
+                }
+                None => {
+                    warn!("block stream ended unexpectedly");
+                    let reason = if self.block_consumer.has_pending_bids() {
+                        ShutdownReason::BlockStreamEndedWithPending
+                    } else {
+                        ShutdownReason::BlockStreamEnded
+                    };
+                    self.record_summary(None, reason);
                     break;
                 }
             }
         }
         Ok(())
+    }
+
+    fn record_summary(&mut self, summary: Option<BidSummary>, reason: ShutdownReason) {
+        let summary = summary.unwrap_or_else(|| self.block_consumer.summary());
+        log_summary(&summary, &reason);
+        match persist_summary(&summary, &reason) {
+            Ok(path) => info!(file = %path.display(), "bid summary persisted"),
+            Err(err) => warn!(?err, "failed to persist bid summary"),
+        }
     }
 }

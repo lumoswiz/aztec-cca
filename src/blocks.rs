@@ -162,6 +162,14 @@ where
         Self { registry }
     }
 
+    pub fn summary(&self) -> BidSummary {
+        self.registry.summary()
+    }
+
+    pub fn has_pending_bids(&self) -> bool {
+        !self.registry.all_done()
+    }
+
     #[instrument(skip_all, fields(block = header.number))]
     pub async fn handle_block(&mut self, header: &Header) -> Result<Completion> {
         let window = self.registry.window();
@@ -256,6 +264,10 @@ pub enum Completion {
 pub enum ShutdownReason {
     AllBidsProcessed,
     AuctionEndedWithPending,
+    BlockStreamError,
+    BlockStreamErrorWithPending,
+    BlockStreamEnded,
+    BlockStreamEndedWithPending,
 }
 
 async fn submit_bid<P>(tracked: &mut TrackedBid<P>) -> Result<B256>
