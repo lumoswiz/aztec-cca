@@ -23,6 +23,7 @@ use alloy::{
 };
 use eyre::{Result, eyre};
 use futures_util::{Stream, StreamExt, stream::BoxStream};
+use serde::Serialize;
 use tokio::time::sleep;
 use tracing::{error, info, info_span, instrument, warn};
 
@@ -251,7 +252,7 @@ pub enum Completion {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize)]
 pub enum ShutdownReason {
     AllBidsProcessed,
     AuctionEndedWithPending,

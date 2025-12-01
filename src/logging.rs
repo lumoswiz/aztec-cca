@@ -2,7 +2,13 @@ use crate::{
     blocks::ShutdownReason,
     registry::{BidOutcomeState, BidSummary},
 };
-use eyre::Result;
+use eyre::{Result, WrapErr};
+use serde::Serialize;
+use std::{
+    fs::File,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, fmt};
 
@@ -57,4 +63,25 @@ pub fn log_summary(summary: &BidSummary, reason: &ShutdownReason) {
             ),
         }
     }
+}
+
+#[derive(Serialize)]
+struct PersistedSummary {
+    reason: ShutdownReason,
+    summary: BidSummary,
+}
+
+pub fn persist_summary(summary: &BidSummary, reason: &ShutdownReason) -> Result<PathBuf> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .wrap_err("system clock is before UNIX_EPOCH")?
+        .as_secs();
+    let path = PathBuf::from(format!("cca-summary-{timestamp}.json"));
+    let mut file = File::create(&path).wrap_err("failed to create summary file")?;
+    let payload = PersistedSummary {
+        reason: reason.clone(),
+        summary: summary.clone(),
+    };
+    serde_json::to_writer_pretty(&mut file, &payload).wrap_err("failed to write summary file")?;
+    Ok(path)
 }

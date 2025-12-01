@@ -10,6 +10,7 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use eyre::Result;
+use serde::Serialize;
 
 const DEFAULT_MAX_RETRIES: u8 = 3;
 
@@ -239,7 +240,7 @@ pub enum RetryStatus {
     Exhausted,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BidSummary {
     pub submitted: usize,
     pub failed: usize,
@@ -247,14 +248,14 @@ pub struct BidSummary {
     pub outcomes: Vec<BidOutcome>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BidOutcome {
     pub owner: Address,
     pub amount: u128,
     pub state: BidOutcomeState,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum BidOutcomeState {
     Pending {
         attempts: u8,
