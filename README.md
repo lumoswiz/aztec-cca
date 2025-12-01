@@ -35,11 +35,22 @@ docker run --rm --name aztec-cca \
 
 #### Prebuilt Image
 
+Latest image:
+
 ```bash
 docker run --rm --name aztec-cca \
   --env-file .env \
   -v "$PWD/bids.toml:/app/bids.toml:ro" \
-  ghcr.io/lumoswiz/aztec-cca:0.1.0
+  ghcr.io/lumoswiz/aztec-cca:latest
+```
+
+Specific tagged release:
+
+```bash
+docker run --rm --name aztec-cca \
+  --env-file .env \
+  -v "$PWD/bids.toml:/app/bids.toml:ro" \
+  ghcr.io/lumoswiz/aztec-cca:v0.1.0
 ```
 
 ## How it Works
