@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use tracing_subscriber::{EnvFilter, fmt};
 
 pub fn init_logging() -> Result<()> {
@@ -32,6 +32,30 @@ pub fn log_summary(summary: &BidSummary, reason: &ShutdownReason) {
             failed = summary.failed,
             pending = summary.pending,
             "bid summary (auction ended early)"
+        ),
+        ShutdownReason::BlockStreamError => error!(
+            submitted = summary.submitted,
+            failed = summary.failed,
+            pending = summary.pending,
+            "bid summary (block stream error)"
+        ),
+        ShutdownReason::BlockStreamErrorWithPending => error!(
+            submitted = summary.submitted,
+            failed = summary.failed,
+            pending = summary.pending,
+            "bid summary (block stream error with pending bids)"
+        ),
+        ShutdownReason::BlockStreamEnded => warn!(
+            submitted = summary.submitted,
+            failed = summary.failed,
+            pending = summary.pending,
+            "bid summary (block stream ended)"
+        ),
+        ShutdownReason::BlockStreamEndedWithPending => warn!(
+            submitted = summary.submitted,
+            failed = summary.failed,
+            pending = summary.pending,
+            "bid summary (block stream ended with pending bids)"
         ),
     }
 
