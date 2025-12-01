@@ -1,0 +1,28 @@
+# Build artifacts
+target/
+**/*.rs.bk
+
+# Git metadata
+.git
+.gitignore
+.github
+
+# Env / secrets
+.env
+*.env
+
+# Local bids
+bids.toml
+
+# Editor / IDE
+.vscode
+.idea
+*.swp
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.out
