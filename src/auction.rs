@@ -135,20 +135,6 @@ pub struct AuctionParams {
     pub has_any_token: bool,
 }
 
-impl AuctionParams {
-    pub fn ensure_tick_aligned(&self, bid_price: U256) -> Result<()> {
-        if bid_price % self.tick_spacing != U256::from(0) {
-            return Err(eyre!(
-                "bid price {} is not aligned with tick spacing {}",
-                bid_price,
-                self.tick_spacing
-            ));
-        }
-
-        Ok(())
-    }
-}
-
 #[derive(Debug)]
 pub struct SubmitBidParams {
     pub max_price: U256,
