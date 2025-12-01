@@ -38,6 +38,7 @@ async fn main() -> Result<()> {
     init_logging()?;
     let config = Config::from_env()?;
     let provider = ProviderBuilder::new()
+        .wallet(config.signer.clone())
         .connect_with(&config.transport)
         .await?;
     AuctionBot::build_with_provider(provider, config)

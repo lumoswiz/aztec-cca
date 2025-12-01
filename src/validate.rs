@@ -18,7 +18,7 @@ impl<'a> PreflightValidator<'a> {
             self.ensure_max_price_within_bounds(idx, bid)?;
         }
         self.ensure_within_purchase_limit()?;
-        // self.ensure_has_soulbound_token()?;
+        self.ensure_has_soulbound_token()?;
         Ok(())
     }
 
@@ -44,16 +44,6 @@ impl<'a> PreflightValidator<'a> {
             ));
         }
         Ok(())
-    }
-
-    fn ensure_tick_alignment(&self, idx: usize, bid: &BidParams) -> Result<()> {
-        let bid_no = idx + 1;
-        self.params.ensure_tick_aligned(bid.max_bid).map_err(|err| {
-            eyre!(
-                "bid #{bid_no} (owner {}) not tick-aligned: {err}",
-                bid.owner
-            )
-        })
     }
 
     fn ensure_within_purchase_limit(&self) -> Result<()> {

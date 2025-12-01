@@ -302,8 +302,8 @@ where
         if current > start {
             break;
         }
-        sleep(Duration::from_millis(250)).await;
+        sleep(Duration::from_millis(500)).await;
     }
-    sleep(Duration::from_millis(250)).await;
+    sleep(Duration::from_millis(500)).await;
     Ok(())
 }
