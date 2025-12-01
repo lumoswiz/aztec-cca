@@ -16,7 +16,6 @@ impl<'a> PreflightValidator<'a> {
         for (idx, bid) in self.bids.iter().enumerate() {
             self.ensure_amount_positive(idx, bid)?;
             self.ensure_max_price_within_bounds(idx, bid)?;
-            self.ensure_tick_alignment(idx, bid)?;
         }
         self.ensure_within_purchase_limit()?;
         // self.ensure_has_soulbound_token()?;
