@@ -2,8 +2,10 @@ use crate::{
     CCA::CCAInstance, Soulbound::SoulboundInstance, ValidationHook::ValidationHookInstance,
     config::BidParams,
 };
-use alloy::primitives::{Address, U256};
-use alloy::providers::Provider;
+use alloy::{
+    primitives::{Address, U256},
+    providers::Provider,
+};
 use eyre::{Result, eyre};
 
 #[derive(Debug, Clone)]
