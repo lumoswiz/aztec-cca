@@ -1,0 +1,9 @@
+[[bids]]
+max_bid = "19807042548578993971286201723" # market order Q96 format
+amount = "2000000000000000000"            # amount ether in wei
+owner = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" 
+
+[[bids]]
+max_bid = "784114545783786405144632"
+amount = "500000000000000000"              
+# Defaults to the PRIVATE_KEY address when owner omitted

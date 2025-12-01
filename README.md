@@ -2,41 +2,59 @@
 
 Bot for submitting bids to Aztec’s Uniswap Continuous Clearing Auction (CCA).
 
-## Configure Environment Variables
+## Configure
 
-- `RPC_ENDPOINT` accepts HTTP or WS URLs, or an IPC path inferred by Alloy’s `ProviderBuilder`.
-- `PRIVATE_KEY` signs the bid transactions and provides the default `owner` for `submitBid` whenever a `bids.toml` entry omits `owner`.
+- Environment variables in `.env`. Example [here](.env.example).
+- Bids in `bids.toml`. Example [here](bids.toml.example)
 
-## Configure Bids
-
-Add your bids to `bids.toml`: 
-
-```toml
-[[bids]]
-max_bid = "19807042548578993971286201723" # market order 
-amount = "2000000000000000000"            
-owner = "0x1234567890aBCdEf1234567890abCDef12345678"  # optional
-
-[[bids]]
-max_bid = "784114545783786405144632"
-amount = "500000000000000000"              
-# Defaults to the PRIVATE_KEY address when owner omitted
-```
-
-- `max_bid` format is Q96.
 
 ## Running the Bot
+
+### Local
 ```bash
 cargo run --release
 ```
 
-What happens on startup:
-1. Loads environment variables, parses RPC transport, and instantiates the signer.
-2. Reads bid entries from `bids.toml`, validates them, and aligns `max_bid` to the closest valid tick.
-3. Fetches auction parameters and validates bids against them.
-4. Subscribes/polls for new blocks and waits until the public auction begins.
-5. Iterates over pending bids each block: prepare params, build the transaction, simulate, and then send it. Failures are retried (up to three attempts) before the bid is marked failed.
-6. Stops automatically when all bids are submitted/exhausted or the auction window closes.
+### Docker
+
+#### Local
+
+```bash
+docker build -t aztec-cca:local .
+```
+
+```bash
+docker run --rm --name aztec-cca \
+  --env-file .env \
+  -v "$PWD/bids.toml:/app/bids.toml:ro" \
+  aztec-cca:local
+```
+
+#### Prebuilt Image
+
+```bash
+docker run --rm --name aztec-cca \
+  --env-file .env \
+  -v "$PWD/bids.toml:/app/bids.toml:ro" \
+  ghcr.io/lumoswiz/aztec-cca:0.1.0
+```
+
+## How it Works
+
+1. **Configuration loading** – [`src/config.rs`](./src/config.rs)  
+   Reads environment variables, builds the provider with a signer, and turns `bids.toml` into structured bid specs.
+
+2. **Bid validation & planning** – [`src/validate.rs`](./src/validate.rs), [`src/bids.rs`](./src/bids.rs)  
+   Checks every bid amount, aligns prices into ticks (if not already), and buckets them into `PlannedBid`s.
+
+3. **Auction snapshot** – [`src/auction.rs`](./src/auction.rs)  
+   Fetches the auction snapshot, tick list, and eligibility data once so all bids share the same context.
+
+4. **Execution pipeline** – [`src/blocks.rs`](./src/blocks.rs), [`src/registry.rs`](./src/registry.rs), [`src/transaction.rs`](./src/transaction.rs)  
+   Streams headers, feeds pending bids through **prepare → simulate → send**, and retries up to three times per failure.
+
+5. **Logging & summary** – [`src/logging.rs`](./src/logging.rs)  
+   Prints a final summary once every bid has succeeded/failed or the auction window closes.
 
 ## Safety
 
