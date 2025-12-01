@@ -3,7 +3,7 @@ use crate::{
     bids::preprocess_bids,
     blocks::{BlockConsumer, BlockProducer, Completion},
     config::Config,
-    logging::log_summary,
+    logging::{log_summary, persist_summary},
     registry::BidRegistry,
     validate::PreflightValidator,
 };
@@ -13,7 +13,7 @@ use alloy::{
 };
 use eyre::Result;
 use futures_util::StreamExt;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
 const CCA_ADDRESS: Address = address!("0x608c4e792C65f5527B3f70715deA44d3b302F4Ee");
 const HOOK_ADDRESS: Address = address!("0x2DD6e0E331DE9743635590F6c8BC5038374CAc9D");
@@ -71,6 +71,14 @@ where
                     Completion::Pending => {}
                     Completion::Finished { summary, reason } => {
                         log_summary(&summary, &reason);
+                        match persist_summary(&summary, &reason) {
+                            Ok(path) => {
+                                info!(file = %path.display(), "bid summary persisted");
+                            }
+                            Err(err) => {
+                                warn!(?err, "failed to persist bid summary");
+                            }
+                        }
                         break;
                     }
                 },

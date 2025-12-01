@@ -1051,6 +1051,7 @@ dependencies = [
  "eyre",
  "futures-util",
  "serde",
+ "serde_json",
  "tokio",
  "toml",
  "tracing",
