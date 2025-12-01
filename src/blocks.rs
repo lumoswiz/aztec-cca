@@ -43,7 +43,7 @@ where
         let stream = match endpoint {
             BuiltInConnectionString::Ws(_, _) | BuiltInConnectionString::Ipc(_) => {
                 let sub = provider.subscribe_blocks().await?;
-                sub.into_stream().map(|header| Ok(header)).boxed()
+                sub.into_stream().map(Ok).boxed()
             }
             BuiltInConnectionString::Http(_) => {
                 align_polling(&provider).await?;
