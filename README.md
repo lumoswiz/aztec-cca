@@ -1,6 +1,9 @@
 # Aztec CCA Bid Bot
 
-Bot for submitting bids to Aztec’s Uniswap Continuous Clearing Auction (CCA).
+Bot for automating submissions into Aztec’s Uniswap Continuous Clearing Auction (CCA). Describe one or many bids in `bids.toml`, point it at any Ethereum endpoint (HTTP, WS, or IPC), and it streams blocks until the public track of the auction is active.
+
+- Each bid is validated, aligned to the auction tick size, then submitted sequentially with automatic retries so you can stage multiple price points safely.
+- When the auction finishes—or if the bot stops for any reason—it emits a human-readable log plus a `cca-summary-<timestamp>.json` file so you can audit which bids landed and why any failed.
 
 ## Configure
 
