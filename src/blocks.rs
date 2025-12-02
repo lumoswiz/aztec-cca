@@ -177,7 +177,7 @@ where
 
         if block_number < window.contributor_period_end_block {
             info!(
-                end_block = %window.contributor_period_end_block,
+                blocks_remaining = %window.contributor_period_end_block - block_number,
                 "contributor track active"
             );
             return Ok(Completion::Pending);
